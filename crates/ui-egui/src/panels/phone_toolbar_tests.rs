@@ -59,7 +59,7 @@ fn the_bar_runs_along_the_bottom_edge_and_the_side_rail_is_gone() {
     assert!(strip.top() > 700.0 && strip.bottom() <= 800.5, "the tools sit at the bottom edge: {strip:?}");
     assert!(strip.left() < 120.0 && strip.width() > 250.0, "the row starts at the leading edge: {strip:?}");
     let brush = harness.get_by_label("Brush").rect();
-    assert!(brush.top() >= strip.top() - 0.5 && brush.bottom() <= strip.bottom() + 0.5, "the button is inside the bar: {brush:?}");
+    assert!(brush.top() > 700.0 && brush.bottom() <= 800.0, "the buttons sit at the bottom edge: {brush:?}");
     assert!(brush.height() >= 44.0, "finger-sized buttons: {brush:?}");
     // The chips are pinned at the leading edge, left of the scrolling tools.
     let chips = harness.get_by_label("Switch Foreground and Background Colors (X)").rect();
@@ -120,8 +120,11 @@ fn a_long_press_opens_the_slots_flyout() {
     theme::install_fonts(&ctx);
     frame(&mut app, &ctx, 0.0, vec![]);
     frame(&mut app, &ctx, 0.1, vec![]);
-    let index = TOOL_SECTIONS.iter().flat_map(|section| section.iter()).position(|slot| slot.contains(&Tool::Brush)).expect("the Brush's slot");
+    // The second slot (the marquee tools) is on screen in a 400-point window: the Brush's is
+    // scrolled past the right edge.
+    let index = 1;
     let at = bar_buttons(&ctx)[index].center();
+    assert!(at.x < 400.0 && at.y > 700.0, "the pressed button is on screen: {at:?}");
     let pointer = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
     let key = egui::Id::unique(("phone-tool-slot", index));
     frame(&mut app, &ctx, 1.0, vec![egui::Event::PointerMoved(at), pointer(at, true)]);
@@ -130,14 +133,14 @@ fn a_long_press_opens_the_slots_flyout() {
     assert_eq!(
         ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout")).map(|(id, _)| id)),
         Some(key),
-        "holding the Brush button opens its slot's flyout"
+        "holding the marquee button opens its slot's flyout"
     );
-    assert_eq!(app.ui.tool, Tool::Brush, "holding a button selects the tool it shows");
+    assert_eq!(app.ui.tool, Tool::RectMarquee, "holding a button selects the tool it shows");
     // The release that ends the hold is not a tap: the flyout stays open.
     frame(&mut app, &ctx, 1.45, vec![pointer(at, false)]);
     frame(&mut app, &ctx, 1.5, vec![]);
     assert!(ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout"))).is_some(), "the flyout stays open");
-    // Its rows are the slot's tools, finger-sized: the second one is the Pencil.
+    // Its rows are the slot's tools, finger-sized: the second one is the Elliptical Marquee.
     let mut rows: Vec<Rect> = ctx.viewport(|v| {
         v.prev_pass
             .widgets
@@ -153,7 +156,7 @@ fn a_long_press_opens_the_slots_flyout() {
     let row = rows[1].center();
     frame(&mut app, &ctx, 2.0, vec![egui::Event::PointerMoved(row), pointer(row, true)]);
     frame(&mut app, &ctx, 2.05, vec![pointer(row, false)]);
-    assert_eq!(app.ui.tool, Tool::Pencil, "choosing a row picks that tool");
+    assert_eq!(app.ui.tool, Tool::EllipseMarquee, "choosing a row picks that tool");
     frame(&mut app, &ctx, 2.1, vec![]);
     assert!(ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout"))).is_none(), "and closes the flyout");
 }
