@@ -309,6 +309,14 @@ impl PhotocraftApp {
             // Its Fill help modal is gone with the bar: do not let a stale flag hold the crop's keys.
             panels::options_bar::close_fill_help(ui.ctx());
         }
+        // The phone layout puts every tool along the bottom edge, under the thumb, and drops the
+        // side rail (panels::phone_toolbar). Allocated before the Shortcut Pad's strip, so the bar
+        // runs the window's full width; the status bar below sits above it.
+        let toolbar_shown = (((chrome || self.full_screen_toolbar) && self.ui.panels.toolbar) || tabbed_in) && !home;
+        let phone_toolbar = toolbar_shown && self.compact_layout;
+        if phone_toolbar {
+            panels::phone_toolbar(self, ui);
+        }
         // The shell's strip along a side edge (the Shortcut Pad): below the top bars, so they
         // run the full width of the window.
         self.edge_strip_rect = self.edge_strip.map(|(right, width)| {
@@ -318,7 +326,6 @@ impl PhotocraftApp {
         if chrome && self.ui.panels.status_bar && !home {
             panels::status_bar(self, ui);
         }
-        let toolbar_shown = (((chrome || self.full_screen_toolbar) && self.ui.panels.toolbar) || tabbed_in) && !home;
         // craft-ui's layout holds the canvas as its protected `canvas` panel.
         let docking = ((chrome && self.ui.panels.dock) || tabbed_in) && !home;
         let toolbar_side = self.ui.panels.toolbar_side.resolve();
@@ -330,7 +337,7 @@ impl PhotocraftApp {
         // nothing else is docked beside it. A panel already beside the canvas keeps the standard
         // layout so it stays visible and dockable. The layout must not change once a drag starts:
         // craft-ui records the areas on the press, and swapping the shape cancels the drag.
-        let dock_edge_layout = toolbar_shown && docking && toolbar_at_dock_edge && crate::panel_docking::canvas_alone(self);
+        let dock_edge_layout = !phone_toolbar && toolbar_shown && docking && toolbar_at_dock_edge && crate::panel_docking::canvas_alone(self);
         if dock_edge_layout {
             // Dock outermost, then its rail, then the toolbox, then the canvas: the toolbox sits
             // between the canvas and the dock, not outside the dock at the window edge.
@@ -342,7 +349,7 @@ impl PhotocraftApp {
                 canvas::document_area(self, ui);
             });
         } else {
-            if toolbar_shown {
+            if toolbar_shown && !phone_toolbar {
                 panels::toolbar(self, ui);
             }
             if docking {

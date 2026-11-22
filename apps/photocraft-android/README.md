@@ -184,6 +184,14 @@ phone layout when the screen's smallest side is under 600 dp, Android's own phon
 so a phone stays a phone on its side; it is checked every frame, so rotating, a foldable opening
 or split screen switches at once. The phone layout:
 
+- **Tools:** the tool rail runs along the bottom edge instead of the left one, as one sideways
+  row, each button an icon over the tool's name ("Brush", "Eraser", "Rectangular Marquee").
+  The foreground and background colours are pinned at the row's leading edge. A sideways swipe
+  scrolls the row (with the usual flick glide; the swipe never reaches a button, so scrolling
+  can't pick a tool); a tap picks the tool, a long press or a drag off a button opens its flyout
+  of grouped tools, and the active tool's button is lit. Picking a tool elsewhere (a keyboard
+  shortcut, the pen's eraser end) scrolls its button into view. The side rail is not drawn on a
+  phone.
 - **Panels:** the right-hand dock is only its icon rail (Properties, Navigator, Color &
   Swatches, Layers, History, Brushes, with finger-sized buttons). A rail button opens its group
   as a sheet over the canvas, one at a time, without squeezing the canvas; the same button,
@@ -302,7 +310,7 @@ OpenRaster import, export settings, preferences, brush presets.
 | Touch gestures | See [Touch Input](#touch-input). Palm rejection relies on the pen being seen (touching, or hovering on pens that report hover): a palm landing well before the pen comes near counts as a finger until the pen touches down. |
 | Pen hover | Hover moves are not forwarded by winit 0.30: no brush cursor preview while hovering. The eraser end switches tools on contact, not on proximity, so the first eraser-end touch after flipping still uses the previous tool for that stroke. |
 | Barrel rotation | Android has no standard axis for it: rotation stays 0 (Wacom Art Pen rotation is not read). |
-| UI density | Tablets use the desktop (Photoshop-like) layout; on small tablets panels are dense. Phones get the [phone layout](#phone-layout), but tools and the options bar are still the desktop ones. |
+| UI density | Tablets use the desktop (Photoshop-like) layout; on small tablets panels are dense. Phones get the [phone layout](#phone-layout): the tools are one sideways-scrolling row at the bottom with their names, but the options bar and the dock's sheets keep the desktop controls. |
 | Clipboard images, screen color picker, display ICC profiles | Not available (no Android services wired). |
 | Crash-recovery autosave | Works (Preferences › File Handling). Besides the timer, unsaved work is saved for recovery a few seconds after your last change, because Android can close the app in the background without warning; it comes back the next time you open the app. |
 | TCP control server / MCP | Not available. |

@@ -721,3 +721,292 @@ fn chip_command(app: &mut PhotocraftApp, id: &str) {
         crate::type_tool::foreground_changed(app);
     }
 }
+
+// --------------------------------------------------------------- phone toolbar (bottom edge)
+
+/// The phone layout's tool bar (`PhotocraftApp::compact_layout`: Android phones): the same slots
+/// as the side rail, in one row along the bottom edge, each button showing its tool's icon over
+/// its name, beside the foreground and background colours. The side rail is not drawn on a phone,
+/// so this bar replaces it.
+///
+/// The row scrolls sideways with the phone's own strip scrolling (`scroll_strip`): a sideways
+/// finger swipe scrolls it, a flick glides on, and the swipe never reaches egui, so it can't
+/// select a tool. A finger held still on a button for a moment, then dragged, opens that slot's
+/// flyout instead. Taps, Alt-clicks, double-clicks (Hand fits the image, Zoom shows actual pixels)
+/// and long presses act as on the side rail.
+pub fn phone_toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    // Every tool of Edit › Toolbar, in the side rail's order.
+    let sections = visible_sections(&app.session.prefs().toolbar.hidden);
+    let height = PHONE_ITEM_H.max(chips_height(t.pro, t.round_chips, true));
+    egui::Panel::bottom("phone_toolbar")
+        .resizable(false)
+        .exact_size(height + 8.0)
+        .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 4 }))
+        .show(ui, |ui| {
+            let top = ui.max_rect();
+            ui.painter().line_segment([top.left_top(), top.right_top()], Stroke::new(1.0, t.separator));
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                // Foreground and background colours stay at hand, pinned at the leading edge so
+                // they never scroll away.
+                color_chips(app, ui, true, PHONE_CHIP_W);
+                ui.add_space(4.0);
+                // A press anywhere starts over: the button last held down is not held any more.
+                let flyout_id = phone_flyout_id();
+                if ui.input(|i| i.pointer.any_pressed()) {
+                    ui.data_mut(|d| d.remove::<egui::Id>(flyout_id.with("held")));
+                }
+                let strip = phone_strip_id();
+                let area = egui::ScrollArea::horizontal()
+                    .id_salt("phone-tools")
+                    .auto_shrink([false, false])
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden);
+                let out = crate::scroll_strip::begin(ui.ctx(), strip, area).show(ui, |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                        // Keep the active tool in view when it changes elsewhere (a shortcut, the
+                        // options bar, the eraser end of a pen): scroll to it once per change.
+                        let shown_id = egui::Id::unique("phone-toolbar-shown-tool");
+                        let reveal = ui.data(|d| d.get_temp::<Tool>(shown_id)) != Some(app.ui.tool);
+                        for (index, slot) in sections.iter().flatten() {
+                            phone_tool_slot(app, ui, *index, slot, reveal);
+                        }
+                        ui.data_mut(|d| d.insert_temp(shown_id, app.ui.tool));
+                        let (more, _) = phone_toolbar_button(ui, "ellipsis", tl!("Edit Toolbar…"), false);
+                        if more.clicked()
+                            && let Err(e) = crate::menus::invoke(app, ui.ctx(), "edit.toolbar", json!({}))
+                        {
+                            app.ui.status = e;
+                            app.ui.status_error = true;
+                        }
+                        reveal_focused_control(ui);
+                    });
+                });
+                crate::scroll_strip::record(ui.ctx(), strip, &out);
+            });
+        });
+}
+
+/// The phone toolbar's tool button: the icon box, the label line below it, and the narrowest and
+/// widest button (a button is as wide as its label needs).
+const PHONE_ICON_BOX: f32 = 34.0;
+const PHONE_LABEL_H: f32 = 13.0;
+pub(super) const PHONE_ITEM_H: f32 = PHONE_ICON_BOX + 3.0 + PHONE_LABEL_H;
+const PHONE_TOOL_ICON: f32 = 18.0;
+const PHONE_LABEL_SIZE: f32 = 9.5;
+const PHONE_MIN_ITEM_W: f32 = 54.0;
+const PHONE_MAX_ITEM_W: f32 = 176.0;
+/// The pinned colour chips' cell, wide enough for the round Studio chips side by side.
+const PHONE_CHIP_W: f32 = 46.0;
+/// Flyout rows on a phone: finger-sized, where the side rail's are 26 points.
+pub(super) const PHONE_FLYOUT_ROW_H: f32 = 34.0;
+
+fn phone_flyout_id() -> egui::Id {
+    egui::Id::unique("phone-tool-flyout")
+}
+
+fn phone_strip_id() -> egui::Id {
+    egui::Id::unique("phone-toolbar-strip")
+}
+
+/// A tool's name on the phone toolbar: its localized name without the trailing " Tool" the
+/// desktop tooltips use ("Brush Tool" → "Brush"), which reads better under an icon. A translation
+/// that doesn't end that way keeps its whole name, so no label is invented.
+pub(crate) fn phone_tool_label(tool: Tool) -> &'static str {
+    let full = tl!(tool.label());
+    full.strip_suffix(" Tool").unwrap_or(full)
+}
+
+/// One button of the phone toolbar: `icon` over `label`, in the theme's accent while it is the
+/// active tool. As wide as its label needs (the row scrolls), so no label is clipped.
+fn phone_toolbar_button(ui: &mut egui::Ui, icon: &str, label: &str, selected: bool) -> (egui::Response, Rect) {
+    let t = Tokens::get(ui.ctx());
+    let font = egui::FontId::proportional(PHONE_LABEL_SIZE);
+    let label_w = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x;
+    let w = (label_w + 14.0).clamp(PHONE_MIN_ITEM_W, PHONE_MAX_ITEM_W);
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, PHONE_ITEM_H), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    let face = Rect::from_min_size(rect.min + vec2(1.0, 1.0), rect.size() - vec2(2.0, 2.0));
+    if selected {
+        ui.painter().rect_filled(face, t.radius_sm, t.accent_soft);
+        ui.painter().rect_stroke(face, t.radius_sm, Stroke::new(1.0, t.accent_border), StrokeKind::Inside);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(face, t.radius_sm, t.hover);
+    }
+    let tint = if selected { t.accent_text } else if resp.hovered() { t.text } else { t.icon };
+    let glyph = Rect::from_center_size(pos2(rect.center().x, rect.top() + PHONE_ICON_BOX / 2.0), vec2(PHONE_TOOL_ICON, PHONE_TOOL_ICON));
+    icons::paint(ui, glyph, icon, PHONE_TOOL_ICON, tint);
+    let label_pos = pos2(rect.center().x, rect.top() + PHONE_ICON_BOX + 3.0 + PHONE_LABEL_H / 2.0);
+    ui.painter().text(label_pos, Align2::CENTER_CENTER, label, font, if selected { t.accent_text } else { t.text_dim });
+    (resp, rect)
+}
+
+/// A triangle at the top corner of a phone toolbar button whose slot holds more tools: its flyout
+/// opens above it.
+fn paint_phone_flyout_indicator(ui: &mut egui::Ui, tokens: &Tokens, resp: &egui::Response) {
+    let r = resp.rect;
+    let tri = vec![r.right_top() + vec2(-6.0, 2.0), r.right_top() + vec2(-2.0, 2.0), r.right_top() + vec2(-2.0, 6.0)];
+    ui.painter().add(egui::Shape::convex_polygon(tri, tokens.text_faint, Stroke::NONE));
+}
+
+/// One phone toolbar slot: its button, and the slot's flyout above it when open. `slot_index` is
+/// the slot's place in [`TOOL_SECTIONS`], which finds it again in `ui.data` and in the tests.
+/// `reveal` scrolls the slot into view (the active tool changed elsewhere).
+fn phone_tool_slot(app: &mut PhotocraftApp, ui: &mut egui::Ui, slot_index: usize, slot: &[Tool], reveal: bool) {
+    let t = Tokens::get(ui.ctx());
+    let key = egui::Id::unique(("phone-tool-slot", slot_index));
+    let tool = slot_tool(app.ui.tool, &app.ui.group_tools, slot);
+    let selected = slot.contains(&app.ui.tool);
+    let (resp, rect) = phone_toolbar_button(ui, icons::tool_icon(tool), phone_tool_label(tool), selected);
+    let tip = match crate::tool_shortcuts::shortcut(app, tool) {
+        Some(sc) => format!("{}  ({})", tl!(tool.label()), crate::shortcuts::pretty(&sc)),
+        None => tl!(tool.label()).to_string(),
+    };
+    let resp = resp.on_hover_text(tip);
+    if slot.len() > 1 {
+        paint_phone_flyout_indicator(ui, &t, &resp);
+    }
+    if reveal && selected && !ui.clip_rect().contains_rect(rect) {
+        // Out of view (picked with a shortcut, or by the pen's eraser end): bring it in.
+        ui.scroll_to_rect(rect.expand2(vec2(10.0, 0.0)), Some(egui::Align::Center));
+    }
+    phone_slot_press(app, ui, key, slot, tool, &resp);
+    phone_slot_flyout(app, ui, key, slot, tool, rect);
+}
+
+/// What a press on a phone toolbar button does, as on the side rail: a tap picks the tool it
+/// shows, Alt-click steps to the slot's next tool, a double-click fits the image (Hand) or shows
+/// actual pixels (Zoom), and a long press, a right-click or a drag off the button opens the slot's
+/// flyout. The release that ends a long press doesn't count as a tap.
+fn phone_slot_press(app: &mut PhotocraftApp, ui: &egui::Ui, key: egui::Id, slot: &[Tool], tool: Tool, resp: &egui::Response) {
+    let flyout_id = phone_flyout_id();
+    let held_id = flyout_id.with("held");
+    // Prefer the primary-release event's modifiers (Alt may already be up), and only a release on
+    // this button: the frame's event list is shared with every other widget.
+    let click_mods = ui.input(|i| {
+        i.events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers, .. } if resp.rect.contains(*pos) => {
+                    Some(*modifiers)
+                }
+                _ => None,
+            })
+            .unwrap_or(i.modifiers)
+    });
+    let modified = click_mods.alt || click_mods.shift || click_mods.ctrl || click_mods.command;
+    // egui's double-click ignores modifiers: a plain click after a modified one within
+    // max_double_click_delay still reports double_clicked(). Remember the previous click.
+    let prev_mod_id = key.with("click-mod");
+    let prev_modified = ui.data(|d| d.get_temp::<bool>(prev_mod_id)).unwrap_or(false);
+    let click = resp.clicked() && ui.data(|d| d.get_temp::<egui::Id>(held_id)) != Some(key);
+    if click {
+        let pick = if slot.len() > 1 && click_mods.alt {
+            let from = if slot.contains(&app.ui.tool) { app.ui.tool } else { tool };
+            next_slot_tool(slot, from)
+        } else {
+            tool
+        };
+        crate::tool_memory::select(app, pick);
+    }
+    let plain_double = resp.double_clicked() && !modified && !prev_modified;
+    if plain_double && tool == Tool::Hand {
+        crate::tool_memory::select(app, tool);
+        let _ = app.run("view.fitOnScreen", json!({}));
+    }
+    if plain_double && tool == Tool::Zoom {
+        crate::tool_memory::select(app, tool);
+        let _ = app.run("view.actualPixels", json!({}));
+    }
+    if click {
+        ui.data_mut(|d| d.insert_temp(prev_mod_id, modified));
+    }
+    // Held on the button: after a moment the flyout opens (Photoshop's long press). Ask for the
+    // frame that finds the moment passed: Android only repaints when asked.
+    let held_for = resp.is_pointer_button_down_on().then(|| ui.input(|i| i.pointer.press_start_time().map(|t0| i.time - t0))).flatten();
+    if slot.len() > 1
+        && let Some(seconds) = held_for
+        && seconds < 0.35
+    {
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(0.35 - seconds));
+    }
+    let long_press = held_for.is_some_and(|seconds| seconds >= 0.35);
+    let drag_open = ui.input(|i| tool_flyout_drag_open(resp.rect, i.pointer.press_origin(), i.pointer.hover_pos(), i.pointer.primary_down()));
+    // Pressing the button of its own open flyout again closes it; the release that ends the long
+    // press that opened it doesn't.
+    let open_here = ui.data(|d| d.get_temp::<(egui::Id, Rect)>(flyout_id)).is_some_and(|(k, _)| k == key);
+    let reclicked = open_here && (resp.secondary_clicked() || (resp.clicked() && ui.data(|d| d.get_temp::<egui::Id>(held_id)) != Some(key)));
+    if reclicked {
+        ui.data_mut(|d| d.remove::<(egui::Id, Rect)>(flyout_id));
+    } else if slot.len() > 1 && (resp.secondary_clicked() || long_press || drag_open) {
+        ui.data_mut(|d| {
+            d.insert_temp(flyout_id, (key, resp.rect));
+            if long_press || drag_open {
+                d.insert_temp(held_id, key);
+            }
+        });
+    }
+    if slot.len() > 1 && long_press {
+        // Holding a button selects the tool it shows, as a tap would.
+        crate::tool_memory::select(app, tool);
+        ui.ctx().request_repaint();
+    }
+}
+
+/// The open slot's flyout: its tools as finger-sized rows above the bar, the tool its button shows
+/// marked with a dot, each with its icon, full name and shortcut. Choosing a row selects that tool
+/// and closes the flyout; a press outside or Escape closes it.
+fn phone_slot_flyout(app: &mut PhotocraftApp, ui: &mut egui::Ui, key: egui::Id, slot: &[Tool], shown: Tool, anchor: Rect) {
+    let t = Tokens::get(ui.ctx());
+    let flyout_id = phone_flyout_id();
+    let held_id = flyout_id.with("held");
+    let Some((open_key, _)) = ui.data(|d| d.get_temp::<(egui::Id, Rect)>(flyout_id)) else { return };
+    if open_key != key || slot.len() < 2 {
+        return;
+    }
+    let font = egui::FontId::proportional(13.0);
+    let area = egui::Area::new(key.with("flyout"))
+        .order(egui::Order::Foreground)
+        .pivot(Align2::LEFT_BOTTOM)
+        .fixed_pos(anchor.left_top() - vec2(0.0, 6.0))
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                let label_w =
+                    slot.iter().map(|it| ui.painter().layout_no_wrap(tl!(it.label()).to_string(), font.clone(), t.text).size().x).fold(0.0f32, f32::max);
+                let fw = (label_w + 56.0 + 44.0).max(200.0);
+                for &item in slot.iter() {
+                    let (r, ir) = ui.allocate_exact_size(vec2(fw, PHONE_FLYOUT_ROW_H), Sense::click());
+                    ir.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!(item.label())));
+                    if ir.hovered() {
+                        ui.painter().rect_filled(r, 3.0, t.hover);
+                    }
+                    if item == shown {
+                        ui.painter().rect_filled(Rect::from_center_size(pos2(r.left() + 9.0, r.center().y), vec2(4.0, 4.0)), 0.0, t.text);
+                    }
+                    icons::paint(ui, Rect::from_center_size(pos2(r.left() + 30.0, r.center().y), vec2(20.0, 20.0)), icons::tool_icon(item), 16.0, t.icon);
+                    ui.painter().text(pos2(r.left() + 46.0, r.center().y), Align2::LEFT_CENTER, tl!(item.label()), font.clone(), t.text);
+                    if let Some(sc) = crate::tool_shortcuts::shortcut(app, item) {
+                        let at = pos2(r.right() - 10.0, r.center().y);
+                        ui.painter().text(at, Align2::RIGHT_CENTER, crate::shortcuts::pretty(&sc), egui::FontId::proportional(12.0), t.text_dim);
+                    }
+                    let drag_release = tool_flyout_release(
+                        r,
+                        ui.input(|i| i.pointer.hover_pos()),
+                        ui.input(|i| i.pointer.primary_released()),
+                        ui.data(|d| d.get_temp::<egui::Id>(held_id)) == Some(key),
+                    );
+                    if ir.clicked() || drag_release {
+                        crate::tool_memory::select(app, item);
+                        ui.data_mut(|d| d.remove::<(egui::Id, Rect)>(flyout_id));
+                    }
+                }
+            });
+        });
+    // Any press outside the flyout and its button closes it, as on the side rail.
+    let pressed_outside =
+        ui.input(|i| i.pointer.any_pressed() && i.pointer.press_origin().is_some_and(|p| !area.response.rect.contains(p) && !anchor.contains(p)));
+    if pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        ui.data_mut(|d| d.remove::<(egui::Id, Rect)>(flyout_id));
+    }
+}
