@@ -977,6 +977,7 @@ fn phone_slot_flyout(app: &mut PhotocraftApp, ui: &mut egui::Ui, key: egui::Id, 
                 let fw = (label_w + 56.0 + 44.0).max(200.0);
                 for &item in slot.iter() {
                     let (r, ir) = ui.allocate_exact_size(vec2(fw, PHONE_FLYOUT_ROW_H), Sense::click());
+                    ir.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!(item.label())));
                     if ir.hovered() {
                         ui.painter().rect_filled(r, 3.0, t.hover);
                     }

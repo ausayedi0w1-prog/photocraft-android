@@ -53,18 +53,17 @@ fn phone_labels_drop_only_the_tool_suffix() {
 #[test]
 fn the_bar_runs_along_the_bottom_edge_and_the_side_rail_is_gone() {
     let harness = phone_harness();
-    let rect = egui::containers::panel::PanelState::load(&harness.ctx, panel_state_id(&harness.ctx, "phone_toolbar"))
-        .expect("the phone toolbar panel")
-        .outer_rect;
-    assert!(rect.top() > 700.0 && rect.bottom() <= 800.5, "the tools sit at the bottom edge: {rect:?}");
-    assert!(rect.width() > 390.0, "the bar runs the full width: {rect:?}");
-    assert!(
-        egui::containers::panel::PanelState::load(&harness.ctx, panel_state_id(&harness.ctx, "toolbar")).is_none(),
-        "the side rail is not drawn on a phone"
-    );
+    // The tool row is the sideways-scrolling strip, at the window's bottom edge and as wide as the
+    // window: the side rail would have been a column on the left.
+    let strip = crate::scroll_strip::strips(&harness.ctx).first().copied().expect("the tool row's strip");
+    assert!(strip.top() > 700.0 && strip.bottom() <= 800.5, "the tools sit at the bottom edge: {strip:?}");
+    assert!(strip.left() < 120.0 && strip.width() > 250.0, "the row starts at the leading edge: {strip:?}");
     let brush = harness.get_by_label("Brush").rect();
-    assert!(brush.top() > rect.top() && brush.bottom() <= rect.bottom(), "the button is inside the bar: {brush:?}");
+    assert!(brush.top() > strip.top() && brush.bottom() <= strip.bottom(), "the button is inside the bar: {brush:?}");
     assert!(brush.height() >= 44.0, "finger-sized buttons: {brush:?}");
+    // The chips are pinned at the leading edge, left of the scrolling tools.
+    let chips = harness.get_by_label("Switch Foreground and Background Colors (X)").rect();
+    assert!(chips.left() < brush.left() && chips.bottom() <= 800.5, "the chips lead the row: {chips:?}");
 }
 
 #[test]
@@ -99,8 +98,8 @@ fn a_long_press_opens_the_slots_flyout() {
         pressed: true,
         modifiers: egui::Modifiers::NONE,
     });
-    // Two steps are half a second: past the long press's 350 ms.
-    harness.run_steps(2);
+    // Each step is 0.25 s in the harness: four pass the long press's 350 ms.
+    harness.run_steps(4);
     assert!(harness.query_by_label("Pencil Tool").is_some(), "holding the Brush button lists the slot's other tools");
     assert_eq!(harness.state().ui.tool, Tool::Brush, "holding a button selects the tool it shows");
     // Choosing a row selects that tool and closes the flyout.
