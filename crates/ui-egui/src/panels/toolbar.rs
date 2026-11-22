@@ -791,7 +791,7 @@ pub fn phone_toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 /// widest button (a button is as wide as its label needs).
 const PHONE_ICON_BOX: f32 = 34.0;
 const PHONE_LABEL_H: f32 = 13.0;
-const PHONE_ITEM_H: f32 = PHONE_ICON_BOX + 3.0 + PHONE_LABEL_H;
+pub(super) const PHONE_ITEM_H: f32 = PHONE_ICON_BOX + 3.0 + PHONE_LABEL_H;
 const PHONE_TOOL_ICON: f32 = 18.0;
 const PHONE_LABEL_SIZE: f32 = 9.5;
 const PHONE_MIN_ITEM_W: f32 = 54.0;
@@ -799,7 +799,7 @@ const PHONE_MAX_ITEM_W: f32 = 176.0;
 /// The pinned colour chips' cell, wide enough for the round Studio chips side by side.
 const PHONE_CHIP_W: f32 = 46.0;
 /// Flyout rows on a phone: finger-sized, where the side rail's are 26 points.
-const PHONE_FLYOUT_ROW_H: f32 = 34.0;
+pub(super) const PHONE_FLYOUT_ROW_H: f32 = 34.0;
 
 fn phone_flyout_id() -> egui::Id {
     egui::Id::unique("phone-tool-flyout")

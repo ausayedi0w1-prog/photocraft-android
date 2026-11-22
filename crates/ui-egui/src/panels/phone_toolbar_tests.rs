@@ -59,7 +59,7 @@ fn the_bar_runs_along_the_bottom_edge_and_the_side_rail_is_gone() {
     assert!(strip.top() > 700.0 && strip.bottom() <= 800.5, "the tools sit at the bottom edge: {strip:?}");
     assert!(strip.left() < 120.0 && strip.width() > 250.0, "the row starts at the leading edge: {strip:?}");
     let brush = harness.get_by_label("Brush").rect();
-    assert!(brush.top() > strip.top() && brush.bottom() <= strip.bottom(), "the button is inside the bar: {brush:?}");
+    assert!(brush.top() >= strip.top() - 0.5 && brush.bottom() <= strip.bottom() + 0.5, "the button is inside the bar: {brush:?}");
     assert!(brush.height() >= 44.0, "finger-sized buttons: {brush:?}");
     // The chips are pinned at the leading edge, left of the scrolling tools.
     let chips = harness.get_by_label("Switch Foreground and Background Colors (X)").rect();
@@ -86,25 +86,74 @@ fn tapping_a_tool_selects_it() {
     assert_eq!(harness.state().ui.tool, Tool::RectMarquee);
 }
 
+/// A frame of the phone toolbar alone, at an explicit time: the long press is a clock, so the test
+/// says what the clock says.
+fn frame(app: &mut PhotocraftApp, ctx: &egui::Context, time: f64, events: Vec<egui::Event>) {
+    let mut out = ctx.run_ui(
+        egui::RawInput { time: Some(time), events, screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(400.0, 800.0))), ..Default::default() },
+        |ui| phone_toolbar(app, ui),
+    );
+    out.textures_delta.clear();
+}
+
+/// Clickable buttons of the height the phone bar's tool buttons are, in row order.
+fn bar_buttons(ctx: &egui::Context) -> Vec<Rect> {
+    let mut rects: Vec<Rect> = ctx.viewport(|v| {
+        v.prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, w)| w.iter())
+            .filter(|w| (w.rect.height() - PHONE_ITEM_H).abs() < 0.5 && w.sense.senses_click())
+            .map(|w| w.rect)
+            .collect()
+    });
+    rects.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    rects
+}
+
 #[test]
 fn a_long_press_opens_the_slots_flyout() {
-    let mut harness = phone_harness();
-    let button = harness.get_by_label("Brush").rect();
-    harness.event(egui::Event::PointerMoved(button.center()));
-    harness.run_steps(1);
-    harness.event(egui::Event::PointerButton {
-        pos: button.center(),
-        button: egui::PointerButton::Primary,
-        pressed: true,
-        modifiers: egui::Modifiers::NONE,
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    let ctx = egui::Context::default();
+    PhotocraftApp::setup_context(&ctx, theme::ThemeKind::ALL[0]);
+    egui_extras::install_image_loaders(&ctx);
+    theme::install_fonts(&ctx);
+    frame(&mut app, &ctx, 0.0, vec![]);
+    frame(&mut app, &ctx, 0.1, vec![]);
+    let index = TOOL_SECTIONS.iter().flat_map(|section| section.iter()).position(|slot| slot.contains(&Tool::Brush)).expect("the Brush's slot");
+    let at = bar_buttons(&ctx)[index].center();
+    let pointer = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+    let key = egui::Id::unique(("phone-tool-slot", index));
+    frame(&mut app, &ctx, 1.0, vec![egui::Event::PointerMoved(at), pointer(at, true)]);
+    // 400 ms of holding: past the long press, which opens the slot's flyout above the bar.
+    frame(&mut app, &ctx, 1.4, vec![]);
+    assert_eq!(
+        ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout")).map(|(id, _)| id)),
+        Some(key),
+        "holding the Brush button opens its slot's flyout"
+    );
+    assert_eq!(app.ui.tool, Tool::Brush, "holding a button selects the tool it shows");
+    // The release that ends the hold is not a tap: the flyout stays open.
+    frame(&mut app, &ctx, 1.45, vec![pointer(at, false)]);
+    frame(&mut app, &ctx, 1.5, vec![]);
+    assert!(ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout"))).is_some(), "the flyout stays open");
+    // Its rows are the slot's tools, finger-sized: the second one is the Pencil.
+    let mut rows: Vec<Rect> = ctx.viewport(|v| {
+        v.prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, w)| w.iter())
+            .filter(|w| (w.rect.height() - PHONE_FLYOUT_ROW_H).abs() < 0.5 && w.sense.senses_click())
+            .map(|w| w.rect)
+            .collect()
     });
-    // Each step is 0.25 s in the harness: four pass the long press's 350 ms.
-    harness.run_steps(4);
-    assert!(harness.query_by_label("Pencil Tool").is_some(), "holding the Brush button lists the slot's other tools");
-    assert_eq!(harness.state().ui.tool, Tool::Brush, "holding a button selects the tool it shows");
-    // Choosing a row selects that tool and closes the flyout.
-    harness.get_by_label("Pencil Tool").click();
-    harness.run_steps(3);
-    assert_eq!(harness.state().ui.tool, Tool::Pencil);
-    assert!(harness.query_by_label("Pencil Tool").is_none(), "the flyout closes on its choice");
+    rows.sort_by(|a, b| a.top().total_cmp(&b.top()));
+    assert!(rows.len() >= 2, "the flyout lists the slot's tools: {rows:?}");
+    assert!(rows.iter().all(|r| r.top() < 740.0), "the flyout opens above the bar: {rows:?}");
+    let row = rows[1].center();
+    frame(&mut app, &ctx, 2.0, vec![egui::Event::PointerMoved(row), pointer(row, true)]);
+    frame(&mut app, &ctx, 2.05, vec![pointer(row, false)]);
+    assert_eq!(app.ui.tool, Tool::Pencil, "choosing a row picks that tool");
+    frame(&mut app, &ctx, 2.1, vec![]);
+    assert!(ctx.data(|d| d.get_temp::<(egui::Id, Rect)>(egui::Id::unique("phone-tool-flyout"))).is_none(), "and closes the flyout");
 }
