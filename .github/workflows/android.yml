@@ -83,14 +83,22 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK tools
-        uses: android-actions/setup-android@v3
-
       - name: Android SDK platform 35, build-tools 35, NDK r27
+        # The runner image ships the SDK and cmdline-tools (ANDROID_HOME), so this only adds the
+        # pieces the build needs. android-actions/setup-android is not used: it installs the
+        # retired `tools` package and fails on current images ("Failed to find package 'tools'").
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;$NDK_VERSION"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-          ls "$ANDROID_HOME/ndk"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME="$SDK" ANDROID_SDK_ROOT="$SDK"
+          SDKM="$(command -v sdkmanager || true)"
+          if [ -z "$SDKM" ]; then SDKM="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | tail -1)"; fi
+          echo "SDK $SDK; sdkmanager $SDKM"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          yes | "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "ndk;$NDK_VERSION"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          ls "$SDK/platforms" "$SDK/ndk"
 
       - name: cargo-ndk
         uses: taiki-e/install-action@v2
